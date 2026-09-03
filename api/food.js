@@ -24,7 +24,7 @@ export default async function handler(req, res) {
             content: [
               {
                 type: "text",
-                text: "Eres un nutricionista experto. Mira esta foto de comida e identifica que alimento(s) es. Responde UNICAMENTE con un objeto JSON, sin explicaciones antes ni despues, sin usar bloques de codigo con ```, con exactamente estas claves: alimento (texto), porcion_estimada (texto), calorias (numero), proteina_g (numero), carbohidratos_g (numero), grasas_g (numero), comentario (texto corto y motivador). Si no hay comida visible, responde: {\"error\": \"No se detecto comida en la imagen\"}"
+                text: "Mira esta foto de comida. NO expliques tu razonamiento, NO pienses en voz alta, NO uses etiquetas como <think>. Responde INMEDIATAMENTE y UNICAMENTE con un objeto JSON plano (sin bloques de codigo, sin backticks, sin texto antes ni despues) con exactamente estas claves: alimento (texto corto), porcion_estimada (texto corto), calorias (numero entero), proteina_g (numero entero), carbohidratos_g (numero entero), grasas_g (numero entero), comentario (una frase corta y motivadora). Si no reconoces comida en la imagen, responde solo: {\"error\": \"No se detecto comida en la imagen\"}"
               },
               {
                 type: "image_url",
@@ -33,8 +33,9 @@ export default async function handler(req, res) {
             ]
           }
         ],
-        temperature: 0.3,
-        max_tokens: 500
+        temperature: 0.2,
+        max_tokens: 800,
+        reasoning_effort: "none"
       })
     });
 
@@ -44,23 +45,29 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: data.error.message });
     }
 
-    let contenido = data.choices[0].message.content.trim();
+    let contenido = data.choices[0].message.content || "";
 
-    // Limpieza por si el modelo agrega ```json al inicio/final
-    contenido = contenido.replace(/```json/gi, "").replace(/```/g, "").trim();
+    // Quita cualquier bloque de "pensamiento" que el modelo haya metido
+    contenido = contenido.replace(/<think>[\s\S]*?<\/think>/gi, "");
+    contenido = contenido.replace(/```json/gi, "").replace(/```/g, "");
+    contenido = contenido.trim();
 
-    // Se queda solo con lo que está entre el primer { y el último }
+    // Se queda solo con lo que está entre la PRIMERA { y la ÚLTIMA }
     const inicio = contenido.indexOf("{");
     const fin = contenido.lastIndexOf("}");
-    if (inicio !== -1 && fin !== -1) {
-      contenido = contenido.substring(inicio, fin + 1);
+
+    if (inicio === -1 || fin === -1) {
+      console.error("Respuesta sin JSON detectable:", contenido);
+      return res.status(500).json({ error: "La IA no devolvió un resultado válido. Intenta con otra foto." });
     }
+
+    contenido = contenido.substring(inicio, fin + 1);
 
     let analisis;
     try {
       analisis = JSON.parse(contenido);
     } catch (e) {
-      console.error("No se pudo interpretar la respuesta:", contenido);
+      console.error("JSON invalido recibido:", contenido);
       return res.status(500).json({ error: "La IA no pudo analizar esta imagen claramente. Intenta con otra foto." });
     }
 

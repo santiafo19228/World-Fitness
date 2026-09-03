@@ -24,7 +24,7 @@ export default async function handler(req, res) {
             content: [
               {
                 type: "text",
-                text: "Eres un nutricionista experto. Mira esta foto de comida e identifica qué alimento(s) es. Responde SOLO con un objeto JSON válido, sin texto adicional, con este formato exacto: {\"alimento\": \"nombre del plato o alimento\", \"porcion_estimada\": \"ej: 1 plato mediano (~250g)\", \"calorias\": numero, \"proteina_g\": numero, \"carbohidratos_g\": numero, \"grasas_g\": numero, \"comentario\": \"un consejo corto y motivador sobre este alimento\"}. Si no logras identificar comida en la imagen, responde con {\"error\": \"No se detectó comida en la imagen\"}."
+                text: "Eres un nutricionista experto. Mira esta foto de comida e identifica que alimento(s) es. Responde UNICAMENTE con un objeto JSON, sin explicaciones antes ni despues, sin usar bloques de codigo con ```, con exactamente estas claves: alimento (texto), porcion_estimada (texto), calorias (numero), proteina_g (numero), carbohidratos_g (numero), grasas_g (numero), comentario (texto corto y motivador). Si no hay comida visible, responde: {\"error\": \"No se detecto comida en la imagen\"}"
               },
               {
                 type: "image_url",
@@ -34,8 +34,7 @@ export default async function handler(req, res) {
           }
         ],
         temperature: 0.3,
-        max_tokens: 500,
-        response_format: { type: "json_object" }
+        max_tokens: 500
       })
     });
 
@@ -45,8 +44,25 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: data.error.message });
     }
 
-    const contenido = data.choices[0].message.content;
-    const analisis = JSON.parse(contenido);
+    let contenido = data.choices[0].message.content.trim();
+
+    // Limpieza por si el modelo agrega ```json al inicio/final
+    contenido = contenido.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+    // Se queda solo con lo que está entre el primer { y el último }
+    const inicio = contenido.indexOf("{");
+    const fin = contenido.lastIndexOf("}");
+    if (inicio !== -1 && fin !== -1) {
+      contenido = contenido.substring(inicio, fin + 1);
+    }
+
+    let analisis;
+    try {
+      analisis = JSON.parse(contenido);
+    } catch (e) {
+      console.error("No se pudo interpretar la respuesta:", contenido);
+      return res.status(500).json({ error: "La IA no pudo analizar esta imagen claramente. Intenta con otra foto." });
+    }
 
     return res.status(200).json(analisis);
 

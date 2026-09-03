@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Fitness - Scanner Corporal</title>
+<style>
+    body {
+        background-color: #1a1a1a;
+        color: white;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+    }
+    h1 { color: #39FF14; margin-bottom: 5px; }
+    p.sub { color: #aaa; margin-top: 0; }
+    a.volver {
+        color: #39FF14;
+        text-decoration: none;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    #panel {
+        max-width: 480px;
+        margin: 0 auto 20px auto;
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+        text-align: left;
+    }
+    label {
+        display: block;
+        margin: 10px 0 4px 0;
+        font-size: 14px;
+        color: #ccc;
+    }
+    input, select {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        border: none;
+        font-size: 15px;
+        box-sizing: border-box;
+    }
+    button {
+        background-color: #39FF14;
+        color: black;
+        border: none;
+        padding: 12px 20px;
+        margin-top: 15px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        font-size: 15px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #video-wrap {
+        position: relative;
+        max-width: 480px;
+        margin: 0 auto;
+        display: none;
+    }
+    video, canvas {
+        width: 100%;
+        border-radius: 12px;
+        border: 2px solid #39FF14;
+    }
+    canvas {
+        position: absolute;
+        top: 0;
+        left: 0;
+    }
+    #resultado {
+        max-width: 480px;
+        margin: 20px auto;
+        background-color: #2a2a2a;
+        border-radius: 12px;
+        border: 2px solid #39FF14;
+        padding: 20px;
+        text-align: left;
+        display: none;
+    }
+    #resultado h2 { color: #39FF14; margin-top: 0; }
+    #resultado .valor {
+        font-size: 32px;
+        font-weight: bold;
+        color: #39FF14;
+    }
+    .aviso {
+        font-size: 12px;
+        color: #999;
+        margin-top: 12px;
+        line-height: 1.5;
+        border-top: 1px solid #444;
+        padding-top: 10px;
+    }
+    .fila { display: flex; justify-content: space-between; margin: 6px 0; font-size: 14px; }
+</style>
+</head>
+<body>
+
+<a class="volver" href="index.html">&larr; Volver al chat</a>
+<h1>Scanner Corporal</h1>
+<p class="sub">Estimación por visión artificial (aproximada)</p>
+
+<div id="panel">
+    <label for="altura">Tu estatura (en cm)</label>
+    <input type="number" id="altura" placeholder="Ej: 170">
+
+    <label for="genero">Género</label>
+    <select id="genero">
+        <option value="hombre">Hombre</option>
+        <option value="mujer">Mujer</option>
+    </select>
+
+    <button id="btn-camara">Activar cámara</button>
+</div>
+
+<div id="video-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+</div>
+
+<div style="max-width:480px; margin: 15px auto;">
+    <button id="btn-analizar" style="display:none;">Capturar y analizar</button>
+</div>
+
+<div id="resultado">
+    <h2>Resultado estimado</h2>
+    <div class="fila"><span>% de grasa corporal (aprox.)</span><span class="valor" id="valor-bf">--</span></div>
+    <div class="fila"><span>Ancho de hombros estimado</span><span id="valor-hombros">--</span></div>
+    <div class="fila"><span>Ancho de cadera estimado</span><span id="valor-cadera">--</span></div>
+    <div class="fila"><span>Cintura estimada</span><span id="valor-cintura">--</span></div>
+    <div class="aviso">
+        ⚠️ Este resultado es una <strong>aproximación</strong> calculada a partir de proporciones corporales detectadas por cámara, no de una medición directa con cinta métrica. El margen de error puede ser considerable. No reemplaza una evaluación profesional (bioimpedancia, pliegues cutáneos o DEXA). Úsalo solo como referencia motivacional.
+    </div>
+    <button id="btn-reintentar" style="margin-top:15px;">Escanear de nuevo</button>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const btnCamara = document.getElementById('btn-camara');
+const btnAnalizar = document.getElementById('btn-analizar');
+const btnReintentar = document.getElementById('btn-reintentar');
+const videoWrap = document.getElementById('video-wrap');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const panel = document.getElementById('panel');
+const resultado = document.getElementById('resultado');
+
+let poseLandmarker;
+let ultimoResultado = null;
+let animId = null;
+
+// Carga el modelo de MediaPipe (tarda unos segundos la primera vez)
+async function cargarModelo() {
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1
+    });
+}
+
+btnCamara.addEventListener('click', async () => {
+    const altura = parseFloat(document.getElementById('altura').value);
+    if (!altura || altura < 100 || altura > 230) {
+        alert('Por favor ingresa tu estatura en centímetros (ej: 170)');
+        return;
+    }
+
+    btnCamara.disabled = true;
+    btnCamara.innerText = 'Cargando modelo de IA...';
+
+    try {
+        if (!poseLandmarker) {
+            await cargarModelo();
+        }
+
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        video.srcObject = stream;
+
+        video.onloadedmetadata = () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            videoWrap.style.display = 'block';
+            panel.style.display = 'none';
+            btnAnalizar.style.display = 'block';
+            loopDeteccion();
+        };
+    } catch (err) {
+        console.error(err);
+        alert('No se pudo activar la cámara. Revisa los permisos del navegador.');
+        btnCamara.disabled = false;
+        btnCamara.innerText = 'Activar cámara';
+    }
+});
+
+function loopDeteccion() {
+    const timestamp = performance.now();
+    const resultados = poseLandmarker.detectForVideo(video, timestamp);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (resultados.landmarks && resultados.landmarks.length > 0) {
+        ultimoResultado = resultados.landmarks[0];
+        dibujarEsqueleto(ultimoResultado);
+    }
+
+    animId = requestAnimationFrame(loopDeteccion);
+}
+
+function dibujarEsqueleto(puntos) {
+    const conexiones = [
+        [11,12],[11,23],[12,24],[23,24],
+        [11,13],[13,15],[12,14],[14,16],
+        [23,25],[25,27],[24,26],[26,28]
+    ];
+    ctx.strokeStyle = '#39FF14';
+    ctx.lineWidth = 3;
+    conexiones.forEach(([a,b]) => {
+        const pa = puntos[a], pb = puntos[b];
+        if (pa && pb) {
+            ctx.beginPath();
+            ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
+            ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
+            ctx.stroke();
+        }
+    });
+    ctx.fillStyle = '#39FF14';
+    puntos.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2*Math.PI);
+        ctx.fill();
+    });
+}
+
+btnAnalizar.addEventListener('click', () => {
+    if (!ultimoResultado) {
+        alert('Todavía no se detecta tu cuerpo completo. Aléjate un poco de la cámara e inténtalo de nuevo.');
+        return;
+    }
+    calcularEstimacion(ultimoResultado);
+
+    cancelAnimationFrame(animId);
+    video.srcObject.getTracks().forEach(t => t.stop());
+    videoWrap.style.display = 'none';
+    btnAnalizar.style.display = 'none';
+    resultado.style.display = 'block';
+});
+
+btnReintentar.addEventListener('click', () => {
+    resultado.style.display = 'none';
+    panel.style.display = 'block';
+    btnCamara.disabled = false;
+    btnCamara.innerText = 'Activar cámara';
+});
+
+function calcularEstimacion(puntos) {
+    const alturaReal = parseFloat(document.getElementById('altura').value);
+    const genero = document.getElementById('genero').value;
+
+    // Puntos clave (índices del modelo Pose de MediaPipe)
+    const hombroIzq = puntos[11], hombroDer = puntos[12];
+    const caderaIzq = puntos[23], caderaDer = puntos[24];
+    const tobilloIzq = puntos[27], tobilloDer = puntos[28];
+    const nariz = puntos[0];
+
+    // Calibración: convierte píxeles a centímetros usando la estatura real
+    const yCabeza = nariz.y * canvas.height;
+    const yPies = ((tobilloIzq.y + tobilloDer.y) / 2) * canvas.height;
+    const alturaPixeles = Math.abs(yPies - yCabeza) * 1.15; // ajuste porque la nariz no es la coronilla
+    const cmPorPixel = alturaReal / alturaPixeles;
+
+    // Anchos detectados en píxeles -> cm
+    const anchoHombrosPx = Math.abs((hombroDer.x - hombroIzq.x) * canvas.width);
+    const anchoCaderaPx = Math.abs((caderaDer.x - caderaIzq.x) * canvas.width);
+
+    const anchoHombrosCm = anchoHombrosPx * cmPorPixel;
+    const anchoCaderaCm = anchoCaderaPx * cmPorPixel;
+
+    // Estimaciones aproximadas basadas en proporciones corporales típicas
+    const anchoCinturaCm = (anchoHombrosCm + anchoCaderaCm) / 2 * 0.88;
+    const anchoCuelloCm = anchoHombrosCm * 0.27;
+
+    // Convertir ancho -> circunferencia aproximada (elipse, Ramanujan)
+    function circunferenciaElipse(ancho, factorProfundidad) {
+        const a = ancho / 2;
+        const b = (ancho * factorProfundidad) / 2;
+        return Math.PI * (3*(a+b) - Math.sqrt((3*a+b)*(a+3*b)));
+    }
+
+    const cinturaCirc = circunferenciaElipse(anchoCinturaCm, 0.72);
+    const caderaCirc = circunferenciaElipse(anchoCaderaCm, 0.85);
+    const cuelloCirc = circunferenciaElipse(anchoCuelloCm, 0.95);
+
+    // Fórmula Navy (métrica, cm)
+    let bodyFat;
+    if (genero === 'hombre') {
+        bodyFat = 495 / (1.0324 - 0.19077*Math.log10(cinturaCirc - cuelloCirc) + 0.15456*Math.log10(alturaReal)) - 450;
+    } else {
+        bodyFat = 495 / (1.29579 - 0.35004*Math.log10(cinturaCirc + caderaCirc - cuelloCirc) + 0.22100*Math.log10(alturaReal)) - 450;
+    }
+
+    bodyFat = Math.max(3, Math.min(60, bodyFat)); // límites razonables
+
+    document.getElementById('valor-bf').innerText = bodyFat.toFixed(1) + '%';
+    document.getElementById('valor-hombros').innerText = anchoHombrosCm.toFixed(1) + ' cm';
+    document.getElementById('valor-cadera').innerText = anchoCaderaCm.toFixed(1) + ' cm';
+    document.getElementById('valor-cintura').innerText = cinturaCirc.toFixed(1) + ' cm (circunf. estimada)';
+}
+</script>
+</body>
+</html>

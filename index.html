@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>World Fitness - Asistente IA</title>
+    <style>
+        body {
+            background-color: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        h1 {
+            color: #39FF14;
+            margin-bottom: 5px;
+        }
+        #chat-container {
+            max-width: 650px;
+            margin: 20px auto;
+            background-color: #2a2a2a;
+            border-radius: 12px;
+            border: 2px solid #39FF14;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            height: 480px;
+        }
+        #chat-messages {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            text-align: left;
+        }
+        .mensaje {
+            margin-bottom: 12px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            max-width: 85%;
+            line-height: 1.45;
+            white-space: pre-wrap;
+        }
+        .usuario {
+            background-color: #39FF14;
+            color: black;
+            margin-left: auto;
+        }
+        .asistente {
+            background-color: #333;
+            color: white;
+            margin-right: auto;
+        }
+        #input-area {
+            display: flex;
+            padding: 10px;
+            background-color: #222;
+            border-top: 1px solid #444;
+        }
+        #user-input {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            outline: none;
+        }
+        #send-btn {
+            background-color: #39FF14;
+            color: black;
+            border: none;
+            padding: 12px 20px;
+            margin-left: 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        #send-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .botones-rapidos {
+            margin: 12px 0;
+        }
+        .botones-rapidos button {
+            background-color: #333;
+            color: #39FF14;
+            border: 1px solid #39FF14;
+            padding: 7px 13px;
+            margin: 4px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .botones-rapidos button:hover {
+            background-color: #39FF14;
+            color: black;
+        }
+    </style>
+</head>
+<body>
+    <h1>World Fitness</h1>
+    <p>Asistente Personal con Inteligencia Artificial</p>
+
+    <div class="botones-rapidos">
+        <button onclick="preguntaRapida('Soy principiante, ¿cómo empiezo a entrenar?')">Principiante</button>
+        <button onclick="preguntaRapida('Quiero bajar de peso, ¿qué me recomiendas?')">Bajar de peso</button>
+        <button onclick="preguntaRapida('Armame una rutina de 3 días para casa')">Rutina 3 días</button>
+        <button onclick="preguntaRapida('¿Qué puedo comer para ganar músculo?')">Alimentación</button>
+    </div>
+
+    <div id="chat-container">
+        <div id="chat-messages">
+            <div class="mensaje asistente">
+                ¡Hola! Soy tu asistente de World Fitness. ¿En qué te puedo ayudar?
+            </div>
+        </div>
+        <div id="input-area">
+            <input type="text" id="user-input" placeholder="Escribe tu pregunta..." onkeypress="if(event.key === 'Enter') enviarMensaje()">
+            <button id="send-btn" onclick="enviarMensaje()">Enviar</button>
+        </div>
+    </div>
+
+    <script>
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendBtn = document.getElementById('send-btn');
+
+        function agregarMensaje(texto, tipo) {
+            const div = document.createElement('div');
+            div.className = `mensaje ${tipo}`;
+            div.innerText = texto;
+            chatMessages.appendChild(div);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return div;
+        }
+
+        async function enviarMensaje() {
+            const texto = userInput.value.trim();
+            if (!texto) return;
+
+            agregarMensaje(texto, "usuario");
+            userInput.value = "";
+            sendBtn.disabled = true;
+
+            const cargando = agregarMensaje("Pensando...", "asistente");
+
+            try {
+                const respuesta = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: texto })
+                });
+
+                const data = await respuesta.json();
+
+                if (data.error) {
+                    cargando.innerText = "Error: " + data.error;
+                } else {
+                    cargando.innerText = data.reply;
+                }
+            } catch (error) {
+                cargando.innerText = "Error de conexión con el servidor.";
+                console.error(error);
+            } finally {
+                sendBtn.disabled = false;
+            }
+        }
+
+        function preguntaRapida(texto) {
+            userInput.value = texto;
+            enviarMensaje();
+        }
+    </script>
+</body>
+</html>

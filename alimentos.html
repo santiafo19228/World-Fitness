@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Fitness - Scanner de Alimentos</title>
+<style>
+    body {
+        background-color: #1a1a1a;
+        color: white;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+    }
+    h1 { color: #39FF14; margin-bottom: 5px; }
+    p.sub { color: #aaa; margin-top: 0; }
+    a.volver {
+        color: #39FF14;
+        text-decoration: none;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    #panel {
+        max-width: 480px;
+        margin: 0 auto 20px auto;
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+    }
+    #preview {
+        width: 100%;
+        max-width: 480px;
+        border-radius: 12px;
+        border: 2px solid #39FF14;
+        margin: 15px auto;
+        display: none;
+    }
+    input[type="file"] { display: none; }
+    label.boton-foto {
+        display: block;
+        background-color: #333;
+        color: #39FF14;
+        border: 1px dashed #39FF14;
+        padding: 30px 15px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 15px;
+    }
+    button {
+        background-color: #39FF14;
+        color: black;
+        border: none;
+        padding: 12px 20px;
+        margin-top: 15px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        font-size: 15px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #resultado {
+        max-width: 480px;
+        margin: 20px auto;
+        background-color: #2a2a2a;
+        border-radius: 12px;
+        border: 2px solid #39FF14;
+        padding: 20px;
+        text-align: left;
+        display: none;
+    }
+    #resultado h2 { color: #39FF14; margin-top: 0; }
+    .fila { display: flex; justify-content: space-between; margin: 8px 0; font-size: 15px; border-bottom: 1px solid #444; padding-bottom: 6px; }
+    .comentario { margin-top: 12px; font-style: italic; color: #ccc; }
+    .aviso {
+        font-size: 12px;
+        color: #999;
+        margin-top: 12px;
+        line-height: 1.5;
+        border-top: 1px solid #444;
+        padding-top: 10px;
+    }
+</style>
+</head>
+<body>
+
+<a class="volver" href="index.html">&larr; Volver al chat</a>
+<h1>Scanner de Alimentos</h1>
+<p class="sub">Sube o toma una foto de tu comida</p>
+
+<div id="panel">
+    <label class="boton-foto" for="input-foto">📷 Toca aquí para tomar o elegir una foto</label>
+    <input type="file" id="input-foto" accept="image/*" capture="environment">
+</div>
+
+<img id="preview" alt="Vista previa">
+
+<div style="max-width:480px; margin: 0 auto;">
+    <button id="btn-analizar" style="display:none;">Analizar comida</button>
+</div>
+
+<div id="resultado">
+    <h2 id="nombre-alimento">--</h2>
+    <div class="fila"><span>Porción estimada</span><span id="porcion">--</span></div>
+    <div class="fila"><span>Calorías</span><span id="calorias">--</span></div>
+    <div class="fila"><span>Proteína</span><span id="proteina">--</span></div>
+    <div class="fila"><span>Carbohidratos</span><span id="carbos">--</span></div>
+    <div class="fila"><span>Grasas</span><span id="grasas">--</span></div>
+    <p class="comentario" id="comentario"></p>
+    <div class="aviso">
+        ⚠️ Estos valores son una <strong>estimación generada por IA</strong> a partir de una imagen, no una medición nutricional exacta. Puede variar según la porción real, ingredientes y forma de preparación.
+    </div>
+    <button id="btn-otra">Analizar otra foto</button>
+</div>
+
+<script>
+    const inputFoto = document.getElementById('input-foto');
+    const preview = document.getElementById('preview');
+    const btnAnalizar = document.getElementById('btn-analizar');
+    const btnOtra = document.getElementById('btn-otra');
+    const panel = document.getElementById('panel');
+    const resultado = document.getElementById('resultado');
+
+    let imagenBase64 = null;
+
+    inputFoto.addEventListener('change', () => {
+        const archivo = inputFoto.files[0];
+        if (!archivo) return;
+
+        const lector = new FileReader();
+        lector.onload = (e) => {
+            imagenBase64 = e.target.result;
+            preview.src = imagenBase64;
+            preview.style.display = 'block';
+            btnAnalizar.style.display = 'block';
+        };
+        lector.readAsDataURL(archivo);
+    });
+
+    btnAnalizar.addEventListener('click', async () => {
+        if (!imagenBase64) return;
+
+        btnAnalizar.disabled = true;
+        btnAnalizar.innerText = 'Analizando...';
+
+        try {
+            const respuesta = await fetch('/api/food', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imagenBase64 })
+            });
+
+            const data = await respuesta.json();
+
+            if (data.error) {
+                alert('Error: ' + data.error);
+                btnAnalizar.disabled = false;
+                btnAnalizar.innerText = 'Analizar comida';
+                return;
+            }
+
+            document.getElementById('nombre-alimento').innerText = data.alimento || 'Alimento no identificado';
+            document.getElementById('porcion').innerText = data.porcion_estimada || '--';
+            document.getElementById('calorias').innerText = (data.calorias || '--') + ' kcal';
+            document.getElementById('proteina').innerText = (data.proteina_g || '--') + ' g';
+            document.getElementById('carbos').innerText = (data.carbohidratos_g || '--') + ' g';
+            document.getElementById('grasas').innerText = (data.grasas_g || '--') + ' g';
+            document.getElementById('comentario').innerText = data.comentario || '';
+
+            panel.style.display = 'none';
+            preview.style.display = 'none';
+            btnAnalizar.style.display = 'none';
+            resultado.style.display = 'block';
+
+        } catch (error) {
+            console.error(error);
+            alert('Error de conexión al analizar la imagen.');
+            btnAnalizar.disabled = false;
+            btnAnalizar.innerText = 'Analizar comida';
+        }
+    });
+
+    btnOtra.addEventListener('click', () => {
+        resultado.style.display = 'none';
+        panel.style.display = 'block';
+        inputFoto.value = '';
+        imagenBase64 = null;
+        btnAnalizar.disabled = false;
+        btnAnalizar.innerText = 'Analizar comida';
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Fitness - Análisis de Ejercicio</title>
+<style>
+    body {
+        background-color: #1a1a1a;
+        color: white;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+        text-align: center;
+    }
+    h1 { color: #39FF14; margin-bottom: 5px; }
+    p.sub { color: #aaa; margin-top: 0; }
+    a.volver { color: #39FF14; text-decoration: none; display: inline-block; margin-bottom: 15px; }
+    #panel {
+        max-width: 480px;
+        margin: 0 auto 20px auto;
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+    }
+    select {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        border: none;
+        font-size: 15px;
+        margin-bottom: 10px;
+    }
+    button {
+        background-color: #39FF14;
+        color: black;
+        border: none;
+        padding: 12px 20px;
+        margin-top: 8px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        font-size: 15px;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    #video-wrap {
+        position: relative;
+        max-width: 480px;
+        margin: 0 auto;
+        display: none;
+    }
+    video, canvas {
+        width: 100%;
+        border-radius: 12px;
+        border: 2px solid #39FF14;
+    }
+    canvas { position: absolute; top: 0; left: 0; }
+    #hud {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        background: rgba(0,0,0,0.6);
+        padding: 8px 14px;
+        border-radius: 8px;
+        text-align: left;
+        font-size: 14px;
+    }
+    #hud .rep-num { font-size: 28px; color: #39FF14; font-weight: bold; }
+    #feedback {
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        right: 10px;
+        background: rgba(0,0,0,0.75);
+        padding: 10px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: bold;
+        transition: background 0.2s;
+    }
+    .fb-bien { color: #39FF14; }
+    .fb-mal { color: #ff5555; }
+    .fb-neutro { color: #eee; }
+    #btn-parar {
+        max-width: 480px;
+        margin: 10px auto 0 auto;
+    }
+</style>
+</head>
+<body>
+
+<a class="volver" href="index.html">&larr; Volver al chat</a>
+<h1>Análisis de Ejercicio</h1>
+<p class="sub">Corrige tu técnica en tiempo real</p>
+
+<div id="panel">
+    <select id="ejercicio">
+        <option value="sentadilla">Sentadillas</option>
+    </select>
+    <p style="font-size:12px; color:#999; margin-top:0;">
+        Colócate de frente a la cámara, de cuerpo completo (desde la cabeza hasta los pies), con buena luz.
+    </p>
+    <button id="btn-camara">Activar cámara y empezar</button>
+</div>
+
+<div id="video-wrap">
+    <video id="video" autoplay playsinline muted></video>
+    <canvas id="canvas"></canvas>
+    <div id="hud">
+        <div>Repeticiones</div>
+        <div class="rep-num" id="contador-reps">0</div>
+    </div>
+    <div id="feedback" class="fb-neutro">Colócate en posición...</div>
+</div>
+
+<div id="btn-parar" style="display:none;">
+    <button id="btn-detener">Terminar sesión</button>
+</div>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const btnCamara = document.getElementById('btn-camara');
+const btnDetener = document.getElementById('btn-detener');
+const panel = document.getElementById('panel');
+const videoWrap = document.getElementById('video-wrap');
+const btnPararWrap = document.getElementById('btn-parar');
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const feedbackDiv = document.getElementById('feedback');
+const contadorDiv = document.getElementById('contador-reps');
+
+let poseLandmarker;
+let animId = null;
+let stream = null;
+
+// Estado del contador de sentadillas
+let fase = 'arriba'; // 'arriba' o 'abajo'
+let repeticiones = 0;
+let anguloMinimoEnBajada = 180;
+
+async function cargarModelo() {
+    const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+    );
+    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions: {
+            modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+            delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numPoses: 1
+    });
+}
+
+btnCamara.addEventListener('click', async () => {
+    btnCamara.disabled = true;
+    btnCamara.innerText = 'Cargando IA...';
+
+    try {
+        if (!poseLandmarker) await cargarModelo();
+
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        video.srcObject = stream;
+
+        video.onloadedmetadata = () => {
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            panel.style.display = 'none';
+            videoWrap.style.display = 'block';
+            btnPararWrap.style.display = 'block';
+            loop();
+        };
+    } catch (err) {
+        console.error(err);
+        alert('No se pudo activar la cámara. Revisa los permisos.');
+        btnCamara.disabled = false;
+        btnCamara.innerText = 'Activar cámara y empezar';
+    }
+});
+
+btnDetener.addEventListener('click', () => {
+    if (animId) cancelAnimationFrame(animId);
+    if (stream) stream.getTracks().forEach(t => t.stop());
+    videoWrap.style.display = 'none';
+    btnPararWrap.style.display = 'none';
+    panel.style.display = 'block';
+    btnCamara.disabled = false;
+    btnCamara.innerText = 'Activar cámara y empezar';
+
+    if (repeticiones > 0) {
+        alert('¡Buen trabajo! Hiciste ' + repeticiones + ' sentadillas.');
+    }
+    repeticiones = 0;
+    contadorDiv.innerText = '0';
+    fase = 'arriba';
+});
+
+function loop() {
+    const timestamp = performance.now();
+    const resultados = poseLandmarker.detectForVideo(video, timestamp);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    if (resultados.landmarks && resultados.landmarks.length > 0) {
+        const puntos = resultados.landmarks[0];
+        dibujarEsqueleto(puntos);
+        analizarSentadilla(puntos);
+    } else {
+        setFeedback('No se detecta tu cuerpo completo. Aléjate un poco.', 'neutro');
+    }
+
+    animId = requestAnimationFrame(loop);
+}
+
+function dibujarEsqueleto(puntos) {
+    const conexiones = [
+        [11,12],[11,23],[12,24],[23,24],
+        [11,13],[13,15],[12,14],[14,16],
+        [23,25],[25,27],[24,26],[26,28]
+    ];
+    ctx.strokeStyle = '#39FF14';
+    ctx.lineWidth = 3;
+    conexiones.forEach(([a,b]) => {
+        const pa = puntos[a], pb = puntos[b];
+        if (pa && pb) {
+            ctx.beginPath();
+            ctx.moveTo(pa.x * canvas.width, pa.y * canvas.height);
+            ctx.lineTo(pb.x * canvas.width, pb.y * canvas.height);
+            ctx.stroke();
+        }
+    });
+    ctx.fillStyle = '#39FF14';
+    puntos.forEach(p => {
+        ctx.beginPath();
+        ctx.arc(p.x * canvas.width, p.y * canvas.height, 4, 0, 2*Math.PI);
+        ctx.fill();
+    });
+}
+
+// Calcula el ángulo (en grados) formado en el punto B, entre las líneas B-A y B-C
+function calcularAngulo(a, b, c) {
+    const anguloRad = Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(a.y - b.y, a.x - b.x);
+    let angulo = Math.abs(anguloRad * 180 / Math.PI);
+    if (angulo > 180) angulo = 360 - angulo;
+    return angulo;
+}
+
+function setFeedback(texto, tipo) {
+    feedbackDiv.innerText = texto;
+    feedbackDiv.className = 'fb-' + tipo;
+}
+
+function analizarSentadilla(puntos) {
+    const caderaI = puntos[23], rodillaI = puntos[25], tobilloI = puntos[27];
+    const caderaD = puntos[24], rodillaD = puntos[26], tobilloD = puntos[28];
+    const hombroI = puntos[11], hombroD = puntos[12];
+
+    const anguloRodillaI = calcularAngulo(caderaI, rodillaI, tobilloI);
+    const anguloRodillaD = calcularAngulo(caderaD, rodillaD, tobilloD);
+    const anguloRodilla = (anguloRodillaI + anguloRodillaD) / 2;
+
+    // Chequeo de rodillas hacia adentro (valgo): distancia entre rodillas vs distancia entre tobillos
+    const distRodillas = Math.abs(rodillaD.x - rodillaI.x);
+    const distTobillos = Math.abs(tobilloD.x - tobilloI.x);
+    const rodillasHaciaAdentro = distRodillas < distTobillos * 0.75;
+
+    // Chequeo de espalda muy inclinada hacia adelante
+    const centroHombro = { x: (hombroI.x + hombroD.x)/2, y: (hombroI.y + hombroD.y)/2 };
+    const centroCadera = { x: (caderaI.x + caderaD.x)/2, y: (caderaI.y + caderaD.y)/2 };
+    const inclinacionTorso = Math.abs(centroHombro.x - centroCadera.x);
+
+    // Máquina de estados: cuenta la repetición cuando bajas y vuelves a subir
+    if (anguloRodilla < 120) {
+        fase = 'abajo';
+        if (anguloRodilla < anguloMinimoEnBajada) anguloMinimoEnBajada = anguloRodilla;
+
+        if (rodillasHaciaAdentro) {
+            setFeedback('⚠️ Cuidado, tus rodillas se están yendo hacia adentro', 'mal');
+        } else if (inclinacionTorso > 0.12) {
+            setFeedback('⚠️ Mantén la espalda más recta, no te inclines tanto', 'mal');
+        } else if (anguloRodilla < 80) {
+            setFeedback('✅ Buena profundidad', 'bien');
+        } else {
+            setFeedback('Sigue bajando un poco más...', 'neutro');
+        }
+    } else if (anguloRodilla > 160 && fase === 'abajo') {
+        fase = 'arriba';
+        repeticiones++;
+        contadorDiv.innerText = repeticiones;
+
+        if (anguloMinimoEnBajada > 100) {
+            setFeedback('Repetición contada, pero baja más la próxima vez 🙂', 'neutro');
+        } else {
+            setFeedback('💪 ¡Excelente repetición!', 'bien');
+        }
+        anguloMinimoEnBajada = 180;
+    } else if (fase === 'arriba') {
+        setFeedback('Listo para la siguiente repetición', 'neutro');
+    }
+}
+</script>
+</body>
+</html>

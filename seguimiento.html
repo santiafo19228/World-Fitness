@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Fitness - Mi Seguimiento</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+    body {
+        background-color: #1a1a1a;
+        color: white;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+    }
+    h1 { color: #39FF14; margin-bottom: 5px; text-align: center; }
+    p.sub { color: #aaa; margin-top: 0; text-align: center; }
+    a.volver {
+        color: #39FF14;
+        text-decoration: none;
+        display: inline-block;
+        margin-bottom: 15px;
+    }
+    .contenedor { max-width: 600px; margin: 0 auto; }
+    #panel {
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    label { display: block; margin: 10px 0 4px 0; font-size: 14px; color: #ccc; }
+    input, select, textarea {
+        width: 100%;
+        padding: 10px;
+        border-radius: 6px;
+        border: none;
+        font-size: 15px;
+        box-sizing: border-box;
+        font-family: Arial, sans-serif;
+    }
+    .fila-doble { display: flex; gap: 10px; }
+    .fila-doble > div { flex: 1; }
+    button {
+        background-color: #39FF14;
+        color: black;
+        border: none;
+        padding: 12px 20px;
+        margin-top: 15px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        width: 100%;
+        font-size: 15px;
+    }
+    .caja {
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    .caja h2 { color: #39FF14; margin-top: 0; font-size: 18px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 8px; text-align: left; border-bottom: 1px solid #444; }
+    th { color: #39FF14; }
+    .btn-borrar {
+        background: none;
+        border: none;
+        color: #ff5555;
+        cursor: pointer;
+        width: auto;
+        margin: 0;
+        padding: 4px 8px;
+        font-size: 16px;
+    }
+    .vacio { color: #888; text-align: center; padding: 20px 0; }
+    .resumen { display: flex; gap: 10px; margin-bottom: 20px; }
+    .resumen .tarjeta {
+        flex: 1;
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+    }
+    .resumen .tarjeta .num { font-size: 24px; font-weight: bold; color: #39FF14; }
+    .resumen .tarjeta .lbl { font-size: 12px; color: #aaa; }
+</style>
+</head>
+<body>
+
+<div class="contenedor">
+    <a class="volver" href="index.html">&larr; Volver al chat</a>
+    <h1>Mi Seguimiento</h1>
+    <p class="sub">Registra tu progreso día a día</p>
+
+    <div class="resumen">
+        <div class="tarjeta">
+            <div class="num" id="resumen-dias">0</div>
+            <div class="lbl">Días registrados</div>
+        </div>
+        <div class="tarjeta">
+            <div class="num" id="resumen-racha">0</div>
+            <div class="lbl">Racha actual (días)</div>
+        </div>
+        <div class="tarjeta">
+            <div class="num" id="resumen-peso">--</div>
+            <div class="lbl">Último peso (kg)</div>
+        </div>
+    </div>
+
+    <div id="panel">
+        <label for="fecha">Fecha</label>
+        <input type="date" id="fecha">
+
+        <div class="fila-doble">
+            <div>
+                <label for="peso">Peso (kg)</label>
+                <input type="number" id="peso" step="0.1" placeholder="Ej: 70.5">
+            </div>
+            <div>
+                <label for="ejercicio">Minutos de ejercicio</label>
+                <input type="number" id="ejercicio" placeholder="Ej: 45">
+            </div>
+        </div>
+
+        <div class="fila-doble">
+            <div>
+                <label for="agua">Vasos de agua</label>
+                <input type="number" id="agua" placeholder="Ej: 8">
+            </div>
+            <div>
+                <label for="animo">Estado de ánimo</label>
+                <select id="animo">
+                    <option value="5">😄 Excelente</option>
+                    <option value="4">🙂 Bien</option>
+                    <option value="3" selected>😐 Normal</option>
+                    <option value="2">😕 Bajo</option>
+                    <option value="1">😞 Mal</option>
+                </select>
+            </div>
+        </div>
+
+        <label for="notas">Notas (opcional)</label>
+        <textarea id="notas" rows="2" placeholder="Ej: hice pierna, me sentí con energía..."></textarea>
+
+        <button id="btn-guardar">Guardar registro de hoy</button>
+    </div>
+
+    <div class="caja">
+        <h2>📈 Progreso de peso</h2>
+        <canvas id="grafico-peso" height="180"></canvas>
+    </div>
+
+    <div class="caja">
+        <h2>📋 Historial</h2>
+        <div id="tabla-wrap">
+            <p class="vacio">Todavía no tienes registros. ¡Agrega el de hoy arriba!</p>
+        </div>
+    </div>
+</div>
+
+<script>
+    const CLAVE = 'wf_seguimiento';
+
+    document.getElementById('fecha').valueAsDate = new Date();
+
+    function cargarRegistros() {
+        const datos = localStorage.getItem(CLAVE);
+        return datos ? JSON.parse(datos) : [];
+    }
+
+    function guardarRegistros(registros) {
+        localStorage.setItem(CLAVE, JSON.stringify(registros));
+    }
+
+    document.getElementById('btn-guardar').addEventListener('click', () => {
+        const fecha = document.getElementById('fecha').value;
+        const peso = document.getElementById('peso').value;
+        const ejercicio = document.getElementById('ejercicio').value;
+        const agua = document.getElementById('agua').value;
+        const animo = document.getElementById('animo').value;
+        const notas = document.getElementById('notas').value;
+
+        if (!fecha) {
+            alert('Selecciona una fecha');
+            return;
+        }
+
+        let registros = cargarRegistros();
+
+        // Si ya existe un registro de esa fecha, lo reemplaza
+        registros = registros.filter(r => r.fecha !== fecha);
+
+        registros.push({
+            fecha,
+            peso: peso ? parseFloat(peso) : null,
+            ejercicio: ejercicio ? parseInt(ejercicio) : 0,
+            agua: agua ? parseInt(agua) : 0,
+            animo: parseInt(animo),
+            notas: notas.trim()
+        });
+
+        registros.sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
+
+        guardarRegistros(registros);
+        limpiarFormulario();
+        renderizarTodo();
+    });
+
+    function limpiarFormulario() {
+        document.getElementById('peso').value = '';
+        document.getElementById('ejercicio').value = '';
+        document.getElementById('agua').value = '';
+        document.getElementById('notas').value = '';
+        document.getElementById('animo').value = '3';
+    }
+
+    function borrarRegistro(fecha) {
+        if (!confirm('¿Borrar el registro del ' + fecha + '?')) return;
+        let registros = cargarRegistros();
+        registros = registros.filter(r => r.fecha !== fecha);
+        guardarRegistros(registros);
+        renderizarTodo();
+    }
+
+    function calcularRacha(registros) {
+        if (registros.length === 0) return 0;
+        const fechas = registros.map(r => r.fecha).sort().reverse();
+        let racha = 1;
+        let actual = new Date(fechas[0]);
+
+        for (let i = 1; i < fechas.length; i++) {
+            const anterior = new Date(fechas[i]);
+            const diffDias = Math.round((actual - anterior) / (1000 * 60 * 60 * 24));
+            if (diffDias === 1) {
+                racha++;
+                actual = anterior;
+            } else {
+                break;
+            }
+        }
+        return racha;
+    }
+
+    function renderizarResumen(registros) {
+        document.getElementById('resumen-dias').innerText = registros.length;
+        document.getElementById('resumen-racha').innerText = calcularRacha(registros);
+
+        const conPeso = registros.filter(r => r.peso);
+        const ultimoPeso = conPeso.length > 0 ? conPeso[conPeso.length - 1].peso : '--';
+        document.getElementById('resumen-peso').innerText = ultimoPeso;
+    }
+
+    function renderizarTabla(registros) {
+        const wrap = document.getElementById('tabla-wrap');
+
+        if (registros.length === 0) {
+            wrap.innerHTML = '<p class="vacio">Todavía no tienes registros. ¡Agrega el de hoy arriba!</p>';
+            return;
+        }
+
+        const emojis = { 1: '😞', 2: '😕', 3: '😐', 4: '🙂', 5: '😄' };
+        const filas = [...registros].reverse().map(r => `
+            <tr>
+                <td>${r.fecha}</td>
+                <td>${r.peso ?? '--'}</td>
+                <td>${r.ejercicio} min</td>
+                <td>${r.agua}</td>
+                <td>${emojis[r.animo]}</td>
+                <td><button class="btn-borrar" onclick="borrarRegistro('${r.fecha}')">🗑️</button></td>
+            </tr>
+        `).join('');
+
+        wrap.innerHTML = `
+            <table>
+                <thead>
+                    <tr><th>Fecha</th><th>Peso</th><th>Ejerc.</th><th>Agua</th><th>Ánimo</th><th></th></tr>
+                </thead>
+                <tbody>${filas}</tbody>
+            </table>
+        `;
+    }
+
+    let grafico = null;
+    function renderizarGrafico(registros) {
+        const conPeso = registros.filter(r => r.peso);
+        const ctx = document.getElementById('grafico-peso').getContext('2d');
+
+        if (grafico) grafico.destroy();
+
+        grafico = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: conPeso.map(r => r.fecha),
+                datasets: [{
+                    label: 'Peso (kg)',
+                    data: conPeso.map(r => r.peso),
+                    borderColor: '#39FF14',
+                    backgroundColor: 'rgba(57,255,20,0.15)',
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                plugins: { legend: { labels: { color: 'white' } } },
+                scales: {
+                    x: { ticks: { color: '#aaa' }, grid: { color: '#333' } },
+                    y: { ticks: { color: '#aaa' }, grid: { color: '#333' } }
+                }
+            }
+        });
+    }
+
+    function renderizarTodo() {
+        const registros = cargarRegistros();
+        renderizarResumen(registros);
+        renderizarTabla(registros);
+        renderizarGrafico(registros);
+    }
+
+    renderizarTodo();
+</script>
+</body>
+</html>

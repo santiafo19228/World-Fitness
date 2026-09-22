@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>World Fitness - Mis Hábitos</title>
+<style>
+    body {
+        background-color: #1a1a1a;
+        color: white;
+        font-family: Arial, sans-serif;
+        margin: 0;
+        padding: 20px;
+    }
+    h1 { color: #39FF14; margin-bottom: 5px; text-align: center; }
+    p.sub { color: #aaa; margin-top: 0; text-align: center; }
+    a.volver { color: #39FF14; text-decoration: none; display: inline-block; margin-bottom: 15px; }
+    .contenedor { max-width: 550px; margin: 0 auto; }
+    .caja {
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    .caja h2 { color: #39FF14; margin-top: 0; font-size: 18px; }
+    .habito {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-bottom: 1px solid #444;
+    }
+    .habito:last-child { border-bottom: none; }
+    .habito-izq { display: flex; align-items: center; gap: 12px; }
+    .habito input[type="checkbox"] { width: 22px; height: 22px; cursor: pointer; }
+    .habito .nombre { font-size: 15px; }
+    .habito .racha { font-size: 12px; color: #39FF14; }
+    .btn-borrar-habito {
+        background: none; border: none; color: #ff5555; cursor: pointer; font-size: 16px;
+    }
+    .agregar-habito { display: flex; gap: 8px; margin-top: 15px; }
+    .agregar-habito input {
+        flex: 1; padding: 10px; border-radius: 6px; border: none; font-size: 14px;
+    }
+    button {
+        background-color: #39FF14;
+        color: black;
+        border: none;
+        padding: 10px 16px;
+        border-radius: 6px;
+        font-weight: bold;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    .resumen { display: flex; gap: 10px; margin-bottom: 20px; }
+    .resumen .tarjeta {
+        flex: 1;
+        background-color: #2a2a2a;
+        border: 2px solid #39FF14;
+        border-radius: 12px;
+        padding: 15px;
+        text-align: center;
+    }
+    .resumen .tarjeta .num { font-size: 24px; font-weight: bold; color: #39FF14; }
+    .resumen .tarjeta .lbl { font-size: 11px; color: #aaa; }
+    .btn-recordatorio {
+        width: 100%;
+        margin-top: 10px;
+    }
+    .estado-recordatorio {
+        font-size: 12px;
+        color: #aaa;
+        text-align: center;
+        margin-top: 8px;
+    }
+    .mensaje-motivacion {
+        text-align: center;
+        font-size: 15px;
+        color: #39FF14;
+        padding: 10px;
+        font-style: italic;
+    }
+</style>
+</head>
+<body>
+
+<div class="contenedor">
+    <a class="volver" href="index.html">&larr; Volver al chat</a>
+    <h1>Mis Hábitos</h1>
+    <p class="sub">Marca lo que cumples cada día</p>
+
+    <div class="resumen">
+        <div class="tarjeta">
+            <div class="num" id="resumen-hoy">0/0</div>
+            <div class="lbl">Cumplidos hoy</div>
+        </div>
+        <div class="tarjeta">
+            <div class="num" id="resumen-mejor-racha">0</div>
+            <div class="lbl">Mejor racha</div>
+        </div>
+    </div>
+
+    <p class="mensaje-motivacion" id="mensaje-motivacion"></p>
+
+    <div class="caja">
+        <h2>✅ Hoy</h2>
+        <div id="lista-habitos"></div>
+
+        <div class="agregar-habito">
+            <input type="text" id="input-nuevo-habito" placeholder="Agregar hábito nuevo...">
+            <button id="btn-agregar">Agregar</button>
+        </div>
+    </div>
+
+    <div class="caja">
+        <h2>🔔 Recordatorio</h2>
+        <p style="font-size:13px; color:#aaa; margin-top:0;">
+            Mientras dejes esta pestaña abierta en tu navegador, te va a recordar los hábitos que te falten hoy.
+        </p>
+        <button class="btn-recordatorio" id="btn-recordatorio">Activar recordatorio</button>
+        <p class="estado-recordatorio" id="estado-recordatorio"></p>
+    </div>
+</div>
+
+<script>
+    const CLAVE_LISTA = 'wf_habitos_lista';
+    const CLAVE_REGISTRO = 'wf_habitos_registro';
+    const HABITOS_POR_DEFECTO = ['Beber agua', 'Hacer ejercicio', 'Dormir bien', 'Comer saludable'];
+
+    const hoy = new Date().toISOString().split('T')[0];
+
+    function cargarLista() {
+        const datos = localStorage.getItem(CLAVE_LISTA);
+        return datos ? JSON.parse(datos) : HABITOS_POR_DEFECTO;
+    }
+
+    function guardarLista(lista) {
+        localStorage.setItem(CLAVE_LISTA, JSON.stringify(lista));
+    }
+
+    function cargarRegistro() {
+        const datos = localStorage.getItem(CLAVE_REGISTRO);
+        return datos ? JSON.parse(datos) : {};
+    }
+
+    function guardarRegistro(registro) {
+        localStorage.setItem(CLAVE_REGISTRO, JSON.stringify(registro));
+    }
+
+    function calcularRacha(habito, registro) {
+        let racha = 0;
+        let fecha = new Date();
+        while (true) {
+            const clave = fecha.toISOString().split('T')[0];
+            if (registro[clave] && registro[clave][habito]) {
+                racha++;
+                fecha.setDate(fecha.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+        return racha;
+    }
+
+    function marcarHabito(habito, marcado) {
+        const registro = cargarRegistro();
+        if (!registro[hoy]) registro[hoy] = {};
+        registro[hoy][habito] = marcado;
+        guardarRegistro(registro);
+        renderizarTodo();
+    }
+
+    function borrarHabito(habito) {
+        if (!confirm('¿Eliminar el hábito "' + habito + '"?')) return;
+        let lista = cargarLista();
+        lista = lista.filter(h => h !== habito);
+        guardarLista(lista);
+        renderizarTodo();
+    }
+
+    document.getElementById('btn-agregar').addEventListener('click', () => {
+        const input = document.getElementById('input-nuevo-habito');
+        const nombre = input.value.trim();
+        if (!nombre) return;
+
+        let lista = cargarLista();
+        if (lista.includes(nombre)) {
+            alert('Ese hábito ya existe');
+            return;
+        }
+        lista.push(nombre);
+        guardarLista(lista);
+        input.value = '';
+        renderizarTodo();
+    });
+
+    function renderizarLista() {
+        const lista = cargarLista();
+        const registro = cargarRegistro();
+        const contenedor = document.getElementById('lista-habitos');
+
+        if (lista.length === 0) {
+            contenedor.innerHTML = '<p style="color:#888;">No tienes hábitos agregados todavía.</p>';
+            return;
+        }
+
+        contenedor.innerHTML = lista.map(h => {
+            const marcadoHoy = registro[hoy] && registro[hoy][h] ? 'checked' : '';
+            const racha = calcularRacha(h, registro);
+            return `
+                <div class="habito">
+                    <div class="habito-izq">
+                        <input type="checkbox" ${marcadoHoy} onchange="marcarHabito('${h}', this.checked)">
+                        <div>
+                            <div class="nombre">${h}</div>
+                            <div class="racha">🔥 ${racha} día${racha === 1 ? '' : 's'} seguidos</div>
+                        </div>
+                    </div>
+                    <button class="btn-borrar-habito" onclick="borrarHabito('${h}')">🗑️</button>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderizarResumen() {
+        const lista = cargarLista();
+        const registro = cargarRegistro();
+
+        const cumplidosHoy = lista.filter(h => registro[hoy] && registro[hoy][h]).length;
+        document.getElementById('resumen-hoy').innerText = cumplidosHoy + '/' + lista.length;
+
+        let mejorRacha = 0;
+        lista.forEach(h => {
+            const r = calcularRacha(h, registro);
+            if (r > mejorRacha) mejorRacha = r;
+        });
+        document.getElementById('resumen-mejor-racha').innerText = mejorRacha;
+
+        const mensajes = document.getElementById('mensaje-motivacion');
+        if (lista.length === 0) {
+            mensajes.innerText = '';
+        } else if (cumplidosHoy === lista.length) {
+            mensajes.innerText = '🎉 ¡Completaste todos tus hábitos de hoy!';
+        } else if (cumplidosHoy === 0) {
+            mensajes.innerText = 'Todavía no has marcado nada hoy. ¡Vamos, tú puedes! 💪';
+        } else {
+            mensajes.innerText = `Vas ${cumplidosHoy} de ${lista.length} hoy. ¡Sigue así!`;
+        }
+    }
+
+    function renderizarTodo() {
+        renderizarLista();
+        renderizarResumen();
+    }
+
+    // ===== Recordatorio (solo mientras la pestaña esté abierta) =====
+    let intervaloRecordatorio = null;
+
+    document.getElementById('btn-recordatorio').addEventListener('click', async () => {
+        const estado = document.getElementById('estado-recordatorio');
+        const boton = document.getElementById('btn-recordatorio');
+
+        if (intervaloRecordatorio) {
+            clearInterval(intervaloRecordatorio);
+            intervaloRecordatorio = null;
+            boton.innerText = 'Activar recordatorio';
+            estado.innerText = 'Recordatorio desactivado.';
+            return;
+        }
+
+        if (!('Notification' in window)) {
+            alert('Tu navegador no soporta notificaciones.');
+            return;
+        }
+
+        const permiso = await Notification.requestPermission();
+        if (permiso !== 'granted') {
+            estado.innerText = 'No diste permiso de notificaciones. Actívalo en la configuración del navegador.';
+            return;
+        }
+
+        boton.innerText = 'Desactivar recordatorio';
+        estado.innerText = 'Recordatorio activo (cada 30 min, mientras esta pestaña esté abierta).';
+
+        intervaloRecordatorio = setInterval(() => {
+            const lista = cargarLista();
+            const registro = cargarRegistro();
+            const pendientes = lista.filter(h => !(registro[hoy] && registro[hoy][h]));
+
+            if (pendientes.length > 0) {
+                new Notification('World Fitness 💪', {
+                    body: 'Todavía te falta: ' + pendientes.join(', ')
+                });
+            }
+        }, 30 * 60 * 1000); // cada 30 minutos
+    });
+
+    renderizarTodo();
+</script>
+</body>
+</html>
